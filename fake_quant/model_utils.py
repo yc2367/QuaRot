@@ -9,11 +9,14 @@ OPT_MODEL = transformers.models.opt.modeling_opt.OPTForCausalLM
 OPT_LAYER = transformers.models.opt.modeling_opt.OPTDecoderLayer
 LLAMA_MODEL = transformers.models.llama.modeling_llama.LlamaForCausalLM
 LLAMA_LAYER = transformers.models.llama.modeling_llama.LlamaDecoderLayer
-
+MISTRAL_MODEL = transformers.models.mistral.modeling_mistral.MistralForCausalLM
+MISTRAL_LAYER = transformers.models.mistral.modeling_mistral.MistralDecoderLayer
 
 def model_type_extractor(model):
     if isinstance(model, LLAMA_MODEL):
         return LLAMA_MODEL
+    elif isinstance(model, MISTRAL_MODEL):  #NOTE (Yuzong): add Mistral
+        return MISTRAL_MODEL
     elif isinstance(model, OPT_MODEL):
         return OPT_MODEL
     else:
@@ -23,17 +26,22 @@ def skip(*args, **kwargs):
     # This is a helper function to save time during the initialization! 
     pass
 
+
 def get_rope_function_name(model):
     if isinstance(model, LLAMA_MODEL):
+        return "apply_rotary_pos_emb"
+    if isinstance(model, MISTRAL_MODEL):
         return "apply_rotary_pos_emb"
     raise NotImplementedError
 
 
 def get_layers(model):
-    if isinstance(model, OPT_MODEL):
-        return model.model.decoder.layers
     if isinstance(model, LLAMA_MODEL):
         return model.model.layers
+    if isinstance(model, MISTRAL_MODEL):  #NOTE (Yuzong): add Mistral
+        return model.model.layers
+    if isinstance(model, OPT_MODEL):
+        return model.model.decoder.layers
     raise NotImplementedError
 
 
@@ -41,9 +49,11 @@ def get_llama(model_name, hf_token):
     torch.nn.init.kaiming_uniform_ = skip
     torch.nn.init.uniform_ = skip
     torch.nn.init.normal_ = skip
-    model = transformers.LlamaForCausalLM.from_pretrained(model_name, torch_dtype='auto',
-                                                          use_auth_token=hf_token,
-                                                          low_cpu_mem_usage=True)
+    model = transformers.LlamaForCausalLM.from_pretrained(
+        model_name, torch_dtype='auto',
+        use_auth_token=hf_token,
+        low_cpu_mem_usage=True
+    )
     model.seqlen = 2048
     
     #NOTE (Yuzong): add patch for Llama-3.2
@@ -59,6 +69,21 @@ def get_llama(model_name, hf_token):
     logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
     return model
 
+
+#NOTE (Yuzong): add Mistral
+def get_mistral(model_name, hf_token):
+    torch.nn.init.kaiming_uniform_ = skip
+    torch.nn.init.uniform_ = skip
+    torch.nn.init.normal_ = skip
+    model = transformers.MistralForCausalLM.from_pretrained(
+        model_name, torch_dtype='auto',
+        use_auth_token=hf_token,
+        low_cpu_mem_usage=True
+    )
+    model.seqlen = 2048
+
+    logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
+    return model
 
 
 def get_opt(model_name):
@@ -77,6 +102,8 @@ def get_model(
 ):
     if 'llama' in model_name:
         return get_llama(model_name, hf_token)
+    elif 'mistral' in model_name:  #NOTE (Yuzong): add Mistral
+        return get_mistral(model_name, hf_token)
     elif 'opt' in model_name:
         return get_opt(model_name)
     else:
@@ -84,16 +111,20 @@ def get_model(
 
 
 def get_model_type(model):
-    if isinstance(model, OPT_MODEL):
-        model_type = OPT_MODEL
-    elif isinstance(model, LLAMA_MODEL):
+    if isinstance(model, LLAMA_MODEL):
         model_type = LLAMA_MODEL
+    elif isinstance(model, MISTRAL_MODEL):  #NOTE (Yuzong): add Mistral
+        model_type = MISTRAL_MODEL
+    elif isinstance(model, OPT_MODEL):
+        model_type = OPT_MODEL
     else:
         raise ValueError(f'Unknown model type {model}')
     return model_type
 
 def get_embeddings(model, model_type) -> list[torch.nn.Module]:
     if model_type == LLAMA_MODEL:
+        return [model.model.embed_tokens]
+    elif model_type == MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
         return [model.model.embed_tokens]
     elif model_type == OPT_MODEL:
         return [model.model.decoder.embed_tokens, model.model.decoder.embed_positions]
@@ -104,6 +135,8 @@ def get_embeddings(model, model_type) -> list[torch.nn.Module]:
 def get_transformer_layers(model, model_type):
     if model_type == LLAMA_MODEL:
         return [layer for layer in model.model.layers]
+    elif model_type == MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        return [layer for layer in model.model.layers]
     elif model_type == OPT_MODEL:
         return [layer for layer in model.model.decoder.layers]
     else:
@@ -113,16 +146,27 @@ def get_transformer_layers(model, model_type):
 def get_lm_head(model, model_type):
     if model_type == LLAMA_MODEL:
         return model.lm_head
+    elif model_type == MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        return model.lm_head
     elif model_type == OPT_MODEL:
         return model.lm_head
     else:
         raise ValueError(f'Unknown model type {model_type}')
 
+
 def get_pre_head_layernorm(model, model_type):
     if model_type == LLAMA_MODEL:
         pre_head_layernorm = model.model.norm
-        assert isinstance(pre_head_layernorm,
-                          transformers.models.llama.modeling_llama.LlamaRMSNorm)
+        assert isinstance(
+            pre_head_layernorm,
+            transformers.models.llama.modeling_llama.LlamaRMSNorm
+        )
+    elif model_type == MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        pre_head_layernorm = model.model.norm
+        assert isinstance(
+            pre_head_layernorm,
+            transformers.models.mistral.modeling_mistral.MistralRMSNorm
+        )
     elif model_type == OPT_MODEL:
         pre_head_layernorm = model.model.decoder.final_layer_norm
         assert pre_head_layernorm is not None
@@ -130,14 +174,18 @@ def get_pre_head_layernorm(model, model_type):
         raise ValueError(f'Unknown model type {model_type}')
     return pre_head_layernorm
 
+
 def get_mlp_bottleneck_size(model):
     model_type = get_model_type(model)
     if model_type == LLAMA_MODEL:
+        return model.config.intermediate_size
+    elif model_type == MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
         return model.config.intermediate_size
     elif model_type == OPT_MODEL:
         return model.config.ffn_dim
     else:
         raise ValueError(f'Unknown model type {model_type}')
+
 
 def replace_modules(
     root: torch.nn.Module,
@@ -207,7 +255,7 @@ def capture_layer_io(model_type, layer, layer_input):
 
     handles = []
 
-    if model_type == LLAMA_MODEL:
+    if (model_type == LLAMA_MODEL) or (model_type == MISTRAL_MODEL):  #NOTE (Yuzong): add Mistral
         captured_inputs = {
             'k_proj': [],  # q_proj, v_proj has the same input as k_proj
             'o_proj': [],

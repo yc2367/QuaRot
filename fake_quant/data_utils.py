@@ -27,6 +27,7 @@ def get_wikitext2(nsamples, seed, seqlen, model, hf_token, eval_mode=False):
             tar[:, :-1] = -100
             trainloader.append((inp, tar))
         return trainloader
+        
 
 def get_c4_new(nsamples, seed, seqlen, model, hf_token=None, eval_mode=False):
 
@@ -78,12 +79,37 @@ def get_c4_new(nsamples, seed, seqlen, model, hf_token=None, eval_mode=False):
             trainloader.append((inp, tar))
         return trainloader
 
-    
+
+def get_pileval(nsamples, seed, seqlen, model, hf_token, eval_mode=False):
+    assert not eval_mode, \
+        f"The Pile dataset only supports calibration, but you want to evaluate it !"
+
+    if hf_token is None:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model, use_fast=False)
+    else:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model, use_fast=False, use_auth_token=hf_token)
+        
+    traindata = datasets.load_dataset("mit-han-lab/pile-val-backup", split="validation")
+    traindata = traindata.shuffle(seed=42)
+    random.seed(seed)
+    trainloader = []
+    for _ in range(nsamples):
+        while True:
+            i = random.randint(0, len(traindata) - 1)
+            trainenc = tokenizer(traindata[i]['text'], return_tensors='pt')
+            if trainenc.input_ids.shape[1] >= seqlen:
+                break
+        i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
+        j = i + seqlen
+        inp = trainenc.input_ids[:, i:j]
+        tar = inp.clone()
+        tar[:, :-1] = -100
+        trainloader.append((inp, tar))
+
+    return trainloader
 
 
 def get_ptb_new(nsamples, seed, seqlen, model, hf_token, eval_mode=False):
-    
-        
     if hf_token is None:
         tokenizer = transformers.AutoTokenizer.from_pretrained(model, use_fast=False)
     else:
@@ -113,7 +139,10 @@ def get_loaders(
 ):
     if 'wikitext2' in name:
         return get_wikitext2(nsamples, seed, seqlen, model, hf_token, eval_mode)
-    if 'ptb' in name:
-        return get_ptb_new(nsamples, seed, seqlen, model, hf_token, eval_mode)
     if 'c4' in name:
         return get_c4_new(nsamples, seed, seqlen, model, hf_token, eval_mode)
+    if 'ptb' in name:
+        return get_ptb_new(nsamples, seed, seqlen, model, hf_token, eval_mode)
+    if 'pile' in name:
+        return get_pileval(nsamples, seed, seqlen, model, hf_token, eval_mode)
+    

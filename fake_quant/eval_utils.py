@@ -12,15 +12,14 @@ def evaluator(model, testenc, dev, args):
 
     model.eval()
 
-    if 'opt' in args.model.lower():
+    if 'opt' in args.model:
         opt_type = True
         llama_type = False
-    elif 'llama' in args.model.lower():
+    elif ('llama' in args.model) or ('mistral' in args.model):
         llama_type = True
         opt_type = False
     else:
         raise ValueError(f'Unknown model {args.model}')
-
 
     use_cache = model.config.use_cache
     model.config.use_cache = False
@@ -37,8 +36,9 @@ def evaluator(model, testenc, dev, args):
     elif llama_type:
         layers = model.model.layers
         model.model.embed_tokens = model.model.embed_tokens.to(dev)
-        #NOTE (Yuzong) required for Llama-3.1 and beyond
-        model.model.rotary_emb = model.model.rotary_emb.to(dev)
+        if ('llama' in args.model):
+            #NOTE (Yuzong) required in transformers==4.43.1 and beyond
+            model.model.rotary_emb = model.model.rotary_emb.to(dev)
 
     layers[0] = layers[0].to(dev)
 
@@ -89,10 +89,11 @@ def evaluator(model, testenc, dev, args):
             model.model.decoder.project_in = model.model.decoder.project_in.cpu()
     elif llama_type:
         model.model.embed_tokens = model.model.embed_tokens.cpu()
-        #NOTE (Yuzong) required for Llama-3.1 and beyond
-        model.model.rotary_emb = model.model.rotary_emb.cpu()
         position_ids = cache['position_ids']
-
+        if ('llama' in args.model):
+            #NOTE (Yuzong) required for Llama-3.1 and beyond
+            model.model.rotary_emb = model.model.rotary_emb.cpu()
+            
     torch.cuda.empty_cache()
     outs = [0] * nbatches
     attention_mask = cache['attention_mask']

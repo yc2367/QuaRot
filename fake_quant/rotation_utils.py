@@ -62,24 +62,31 @@ def fuse_layer_norms(model):
         if model_type == model_utils.LLAMA_MODEL:
             fuse_ln_linear(layer.post_attention_layernorm, [layer.mlp.up_proj, layer.mlp.gate_proj])    
             fuse_ln_linear(layer.input_layernorm, [layer.self_attn.q_proj, layer.self_attn.k_proj, layer.self_attn.v_proj])
+        elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+            fuse_ln_linear(layer.post_attention_layernorm, [layer.mlp.up_proj, layer.mlp.gate_proj])    
+            fuse_ln_linear(layer.input_layernorm, [layer.self_attn.q_proj, layer.self_attn.k_proj, layer.self_attn.v_proj])
         elif model_type == model_utils.OPT_MODEL:
             fuse_ln_linear(layer.self_attn_layer_norm, [layer.self_attn.q_proj, layer.self_attn.k_proj, layer.self_attn.v_proj])
             fuse_ln_linear(layer.final_layer_norm, [layer.fc1])
         else:
             raise ValueError(f'Unknown model type {model_type}')
             
-            
-    
         if model_type == model_utils.OPT_MODEL:
             bake_mean_into_linear(layer.self_attn.out_proj)
             bake_mean_into_linear(layer.fc2)
-                    
     
     fuse_ln_linear(model_utils.get_pre_head_layernorm(**kwargs), [model_utils.get_lm_head(**kwargs)])
     
+    if model_type == model_utils.LLAMA_MODEL:
+        rms_norm = transformers.models.llama.modeling_llama.LlamaRMSNorm
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        rms_norm = transformers.models.mistral.modeling_mistral.MistralRMSNorm
+    else:
+        rms_norm = torch.nn.LayerNorm
+
     model_utils.replace_modules(
         model,
-        transformers.models.llama.modeling_llama.LlamaRMSNorm if model_type == model_utils.LLAMA_MODEL else torch.nn.LayerNorm,
+        rms_norm,
         lambda _: model_utils.RMSN(model.config.hidden_size),
         replace_layers=False,
     )
@@ -112,7 +119,6 @@ def get_orthogonal_matrix(size, mode, device=utils.DEV):
     else:
         raise ValueError(f'Unknown mode {mode}')
 
-    
 
 def rotate_embeddings(model, Q: torch.Tensor) -> None:
     # Rotate the embeddings.
@@ -134,6 +140,8 @@ def rotate_attention_output(layer, Q, model_type) -> None:
     # Rotate output matrix of the self-attention layer.
     if model_type == model_utils.LLAMA_MODEL:
         W = layer.self_attn.o_proj
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        W = layer.self_attn.o_proj
     elif model_type == model_utils.OPT_MODEL:
         W = layer.self_attn.out_proj
     else:
@@ -150,23 +158,30 @@ def rotate_mlp_input(layer, Q, model_type):
     # Rotate the MLP input weights.
     if model_type == model_utils.LLAMA_MODEL:
         mlp_inputs = [layer.mlp.up_proj, layer.mlp.gate_proj]
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        mlp_inputs = [layer.mlp.up_proj, layer.mlp.gate_proj]
     elif model_type == model_utils.OPT_MODEL:
         mlp_inputs = [layer.fc1]
     else:
         raise ValueError(f'Unknown model type {model_type}')
+
     for W in mlp_inputs:
         dtype = W.weight.dtype
         W_ = W.weight.data.to(device=utils.DEV, dtype=torch.float64)
         W.weight.data = torch.matmul(W_, Q).to(device="cpu", dtype=dtype)
     
+
 def rotate_mlp_output(layer, Q, model_type):
     # Rotate the MLP output weights and bias.
     if model_type == model_utils.LLAMA_MODEL:
+        W = layer.mlp.down_proj
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
         W = layer.mlp.down_proj
     elif model_type == model_utils.OPT_MODEL:
         W = layer.fc2
     else:
         raise ValueError(f'Unknown model type {model_type}')
+
     dtype = W.weight.data.dtype
     W_ = W.weight.data.to(device=utils.DEV, dtype=torch.float64)
     W.weight.data = torch.matmul(Q.T, W_).to(device="cpu", dtype=dtype)
@@ -174,6 +189,7 @@ def rotate_mlp_output(layer, Q, model_type):
     if W.bias is not None:
         b = W.bias.data.to(device=utils.DEV, dtype=torch.float64)
         W.bias.data = torch.matmul(Q.T, b).to(device="cpu", dtype=dtype)
+
 
 def matmul_hadU_cuda_had(X, hadK, transpose=False):
     '''
@@ -194,12 +210,15 @@ def matmul_hadU_cuda_had(X, hadK, transpose=False):
     return input.to(X.device).to(X.dtype).reshape(
         X.shape) 
 
+
 def rotate_faster_down_proj(layer, model_type, hardK):
     from fast_hadamard_transform import hadamard_transform
     if model_type == model_utils.LLAMA_MODEL:
         W = layer.mlp.down_proj
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
+        W = layer.mlp.down_proj
     else:
-        raise ValueError(f'Faster MLP is onlu supported for LLaMa models!')
+        raise ValueError(f'Faster MLP is only supported for Llama and Mistral models!')
     
     dtype = W.weight.data.dtype
     W.weight.data = matmul_hadU_cuda_had(W.weight.data.float().cuda(), hardK)
@@ -213,9 +232,12 @@ def rotate_head(model, Q: torch.Tensor) -> None:
     W_ = W.weight.data.to(device=utils.DEV, dtype=torch.float64)
     W.weight.data = torch.matmul(W_, Q).to(device="cpu", dtype=dtype)
 
+
 def rotate_ov_proj(layer, model_type, head_num, head_dim):
     v_proj = layer.self_attn.v_proj
     if model_type == model_utils.LLAMA_MODEL:
+        o_proj = layer.self_attn.o_proj
+    elif model_type == model_utils.MISTRAL_MODEL:  #NOTE (Yuzong): add Mistral
         o_proj = layer.self_attn.o_proj
     elif model_type == model_utils.OPT_MODEL:
         o_proj = layer.self_attn.out_proj
@@ -235,13 +257,12 @@ def rotate_model(model, args):
     model_dim = config.hidden_size
     head_dim = model_dim // num_heads
 
-
     model_type = model_utils.model_type_extractor(model)
     rotate_embeddings(model, Q)
     rotate_head(model, Q)
     utils.cleanup_memory()
-    layers = model_utils.get_transformer_layers(model, 
-                                                model_type=model_type)
+    layers = model_utils.get_transformer_layers(model, model_type=model_type)
+
     for idx, layer in enumerate(tqdm.tqdm(layers, unit="layer", desc="Rotating")):
         rotate_attention_inputs(layers[idx], Q, model_type)
         rotate_attention_output(layers[idx], Q, model_type)
@@ -307,7 +328,6 @@ class QKRotationWrapper(torch.nn.Module):
         return q, k
 
 
-
 def add_qk_rotation_wrapper_after_function_call_in_forward(module, function_name, *args, **kwargs):
     '''
     This function adds a rotation wrapper after the output of a function call in forward. 
@@ -317,6 +337,9 @@ def add_qk_rotation_wrapper_after_function_call_in_forward(module, function_name
     import functools
     attr_name = f"{function_name}_qk_rotation_wrapper"
     assert not hasattr(module, attr_name)
-    wrapper = monkeypatch.add_wrapper_after_function_call_in_method(module, "forward",
-                                                                    function_name, functools.partial(QKRotationWrapper, *args, **kwargs))
+    wrapper = monkeypatch.add_wrapper_after_function_call_in_method(
+        module, "forward", 
+        function_name, 
+        functools.partial(QKRotationWrapper, *args, **kwargs)
+    )
     setattr(module, attr_name, wrapper)

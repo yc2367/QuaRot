@@ -19,9 +19,10 @@ supported_models = [
             'meta-llama/Llama-2-70b-hf',
             'meta-llama/Llama-3.1-8B',
             'meta-llama/Llama-3.2-3B',
+            "mistralai/Mistral-7B-v0.3",
             'facebook/opt-125m'
             ]
-supported_datasets = ['wikitext2', 'ptb', 'c4']
+supported_datasets = ['wikitext2', 'c4', 'ptb', 'pile']
 
 # These flags disable using TensorFloat-32 tensor cores (to avoid numerical issues)
 torch.backends.cuda.matmul.allow_tf32 = False

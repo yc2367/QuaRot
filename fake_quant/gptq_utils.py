@@ -151,8 +151,9 @@ def gptq_fwrd(model, dataloader, dev, args):
     model.model.embed_tokens = model.model.embed_tokens.to(dev)
     model.model.norm = model.model.norm.to(dev)
     layers[0] = layers[0].to(dev)
-    #NOTE (Yuzong) required for Llama-3.1 and beyond
-    model.model.rotary_emb = model.model.rotary_emb.to(dev)
+    if "llama" in args.model:
+        #NOTE (Yuzong) required in transformers==4.43.1 and beyond
+        model.model.rotary_emb = model.model.rotary_emb.to(dev)
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros(
@@ -181,8 +182,10 @@ def gptq_fwrd(model, dataloader, dev, args):
     layers[0] = layers[0].cpu()
     model.model.embed_tokens = model.model.embed_tokens.cpu()
     model.model.norm = model.model.norm.cpu()
-    #NOTE (Yuzong) required for Llama-3.1 and beyond
-    model.model.rotary_emb = model.model.rotary_emb.cpu()
+    if "llama" in args.model:
+        #NOTE (Yuzong) required in transformers==4.43.1 and beyond
+        model.model.rotary_emb = model.model.rotary_emb.cpu()
+        
     torch.cuda.empty_cache()
 
     outs = torch.zeros_like(inps)
