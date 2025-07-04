@@ -45,6 +45,17 @@ def get_llama(model_name, hf_token):
                                                           use_auth_token=hf_token,
                                                           low_cpu_mem_usage=True)
     model.seqlen = 2048
+    
+    #NOTE (Yuzong): add patch for Llama-3.2
+    # Llama-3.2 uses tied weights for "embed_tokens" and "lm_head" for parameter efficiency.
+    # Directly rotating "embed_tokens" and "lm_head" will cause wrong semantics.
+    # Hence, we need to separate the weights of "embed_tokens" and "lm_head" before performing rotation.
+    if "llama-3.2" in model_name.lower():
+        model.model.embed_tokens.weight = torch.nn.Parameter(
+            model.lm_head.weight, 
+            requires_grad=model.lm_head.weight.requires_grad
+        )
+
     logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
     return model
 

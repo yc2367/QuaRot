@@ -12,11 +12,13 @@ from accelerate import dispatch_model, infer_auto_device_map
 from accelerate.utils import get_balanced_memory
 
 supported_models = [
+            'huggyllama/Llama-7b',
+            'huggyllama/Llama-13b',
             'meta-llama/Llama-2-7b-hf',
             'meta-llama/Llama-2-13b-hf',
             'meta-llama/Llama-2-70b-hf',
-            'meta-llama/Meta-Llama-3-8B',
-            'meta-llama/Meta-Llama-3-70B',
+            'meta-llama/Llama-3.1-8B',
+            'meta-llama/Llama-3.2-3B',
             'facebook/opt-125m'
             ]
 supported_datasets = ['wikitext2', 'ptb', 'c4']
@@ -76,7 +78,7 @@ def parser_gen():
                         help='Model to load;', choices=supported_models)
     parser.add_argument('--seed', type=int, default=0, help='Random Seed for HuggingFace and PyTorch')
     parser.add_argument('--eval_dataset', type=str, default='wikitext2',
-                        help='Dataset for Evaluation (default: wikitext2)', choices=supported_datasets,)
+                        help='Dataset for Evaluation (default: wikitext2)')
     parser.add_argument('--hf_token', type=str, default=None)
     parser.add_argument('--bsz', type=int, default=32,
                         help='Batch-size for PPL evaluation (default:32)')

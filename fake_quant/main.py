@@ -122,10 +122,11 @@ def main():
                             rope_function_name, 
                             config=model.config,
                             **k_quant_config)
-        
-    # Evaluating on dataset
-    testloader = data_utils.get_loaders(
-            args.eval_dataset,
+    
+    for test_dataset in args.eval_dataset.split(','):
+        # Evaluating on dataset
+        testloader = data_utils.get_loaders(
+            test_dataset,
             seed=args.seed,
             model=args.model,
             seqlen=model.seqlen,
@@ -133,10 +134,9 @@ def main():
             eval_mode=True
         )
 
-    
-    dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args)
-    if args.wandb:
-            wandb.log({'ppl/{}'.format(args.eval_dataset.upper()): dataset_ppl})
+        dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args)
+        if args.wandb:
+            wandb.log({'ppl/{}'.format(test_dataset.upper()): dataset_ppl})
 
     if not args.lm_eval:
         return

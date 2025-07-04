@@ -1,6 +1,7 @@
 import datasets
 import random
 import transformers
+import torch
 
 def get_wikitext2(nsamples, seed, seqlen, model, hf_token, eval_mode=False):
     
@@ -37,8 +38,21 @@ def get_c4_new(nsamples, seed, seqlen, model, hf_token=None, eval_mode=False):
     if eval_mode:
         valdata = datasets.load_dataset(
         'allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation')
-        valenc = tokenizer(' '.join(valdata[:1100]['text']), return_tensors='pt')
-        valenc = valenc.input_ids[:, :(256 * seqlen)]
+
+        #NOTE (Yuzong): modified C4 testloader to reproduce OmniQuant results
+        valenc = []
+        for _ in range(256): # run 256 samples
+            while True:
+                i = random.randint(0, len(valdata) - 1)
+                tmp = tokenizer(valdata[i]['text'], return_tensors='pt')
+                if tmp.input_ids.shape[1] > (seqlen+1):
+                    break
+            i = random.randint(0, tmp.input_ids.shape[1] - seqlen - 1)
+            j = i + seqlen
+            valenc.append(tmp.input_ids[:, i:j])
+        
+        valenc = torch.stack(valenc, dim=0)
+        valenc = valenc.transpose(0, 1).reshape(1, -1)
         class TokenizerWrapper:
             def __init__(self, input_ids):
                 self.input_ids = input_ids

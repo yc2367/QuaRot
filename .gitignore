@@ -12,3 +12,7 @@ CMakeFiles/*
 CMakeCache.txt
 *.egg
 Makefile
+__pycache__/
+results/
+scripts/
+experiments/
