@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 @torch.no_grad()
-def evaluator(model, testenc, dev, args):
+def evaluator(model, testenc, dev, args, dataset_name):
 
     model.eval()
 
@@ -32,7 +32,6 @@ def evaluator(model, testenc, dev, args):
             model.model.decoder.project_out = model.model.decoder.project_out.to(dev)
         if hasattr(model.model.decoder, 'project_in') and model.model.decoder.project_in:
             model.model.decoder.project_in = model.model.decoder.project_in.to(dev)
-
     elif llama_type:
         layers = model.model.layers
         model.model.embed_tokens = model.model.embed_tokens.to(dev)
@@ -151,5 +150,6 @@ def evaluator(model, testenc, dev, args):
     nlls_tensor = torch.cat(nlls)
     ppl = torch.exp(nlls_tensor.mean())
     model.config.use_cache = use_cache
-    logging.info(f'\n{args.eval_dataset.upper()} PPL: {ppl.item():.3f}')
+    logging.info(f'\n{dataset_name.upper()} PPL: {ppl.item():.3f} \n\n')
+
     return ppl.item()

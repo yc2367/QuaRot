@@ -124,6 +124,8 @@ def parser_gen():
                         help='Number of calibration data samples for GPTQ.')
     parser.add_argument('--cal_dataset', type=str, default='wikitext2',
                         help='calibration data samples for GPTQ.', choices=supported_datasets)
+    parser.add_argument('--cal_seqlen', type=int, default=2048,
+                        help='calibration data sequence length for GPTQ.')
     parser.add_argument('--percdamp', type=float, default=.01,
                         help='Percent of the average Hessian diagonal to use for dampening.')
     parser.add_argument('--act_order', action=argparse.BooleanOptionalAction, default=False,

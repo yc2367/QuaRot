@@ -62,7 +62,7 @@ def main():
             trainloader = data_utils.get_loaders(
                 args.cal_dataset, nsamples=args.nsamples,
                 seed=args.seed, model=args.model,
-                seqlen=model.seqlen, eval_mode=False
+                seqlen=args.cal_seqlen, eval_mode=False
             )
             quantizers = gptq_utils.gptq_fwrd(model, trainloader, utils.DEV, args)
             save_dict["w_quantizers"] = quantizers
@@ -134,7 +134,7 @@ def main():
             eval_mode=True
         )
 
-        dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args)
+        dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args, test_dataset)
         if args.wandb:
             wandb.log({'ppl/{}'.format(test_dataset.upper()): dataset_ppl})
 
@@ -146,8 +146,6 @@ def main():
         from lm_eval import utils as lm_eval_utils
         from lm_eval.api.registry import ALL_TASKS
         from lm_eval.models.huggingface import HFLM
-
-        
     
     if args.distribute:
         utils.distribute_model(model)

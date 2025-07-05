@@ -97,7 +97,7 @@ def get_pileval(nsamples, seed, seqlen, model, hf_token, eval_mode=False):
         while True:
             i = random.randint(0, len(traindata) - 1)
             trainenc = tokenizer(traindata[i]['text'], return_tensors='pt')
-            if trainenc.input_ids.shape[1] >= seqlen:
+            if trainenc.input_ids.shape[1] > (seqlen + 1):
                 break
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
