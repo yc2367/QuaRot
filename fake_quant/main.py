@@ -168,7 +168,6 @@ def main():
     confirm_run_unsafe_code = False
     for task in args.tasks:
         if 'humaneval' in task.lower():
-            import os
             os.environ["HF_ALLOW_CODE_EVAL"] = "1"
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
