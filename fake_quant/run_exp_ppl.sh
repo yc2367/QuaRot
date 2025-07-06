@@ -1,5 +1,3 @@
-cd ..
-
 
 ####################  Llama-7B  ####################
 model="huggyllama/Llama-7b"

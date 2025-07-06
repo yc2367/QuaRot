@@ -1,5 +1,3 @@
-cd ..
-
 tasks="arc_challenge_chat"
 
 if [[ ${tasks} == "arc_challenge_chat" ]]
