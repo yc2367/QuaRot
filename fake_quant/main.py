@@ -1,3 +1,4 @@
+import os, json
 import utils
 import torch
 import model_utils
@@ -15,7 +16,7 @@ def main():
         import wandb
         wandb.init(project=args.wandb_project, entity=args.wandb_id)
         wandb.config.update(args)
-        
+
     transformers.set_seed(args.seed)
     model = model_utils.get_model(args.model, args.hf_token)
     model.eval()
@@ -122,23 +123,23 @@ def main():
                             rope_function_name, 
                             config=model.config,
                             **k_quant_config)
-    
-    for test_dataset in args.eval_dataset.split(','):
-        # Evaluating on dataset
-        testloader = data_utils.get_loaders(
-            test_dataset,
-            seed=args.seed,
-            model=args.model,
-            seqlen=model.seqlen,
-            hf_token=args.hf_token,
-            eval_mode=True
-        )
-
-        dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args, test_dataset)
-        if args.wandb:
-            wandb.log({'ppl/{}'.format(test_dataset.upper()): dataset_ppl})
 
     if not args.lm_eval:
+        for test_dataset in args.eval_dataset.split(','):
+            # Evaluating on dataset
+            testloader = data_utils.get_loaders(
+                test_dataset,
+                seed=args.seed,
+                model=args.model,
+                seqlen=model.seqlen,
+                hf_token=args.hf_token,
+                eval_mode=True
+            )
+
+            dataset_ppl = eval_utils.evaluator(model, testloader, utils.DEV, args, test_dataset)
+            if args.wandb:
+                wandb.log({'ppl/{}'.format(test_dataset.upper()): dataset_ppl})
+            
         return
     else:
         # Import lm_eval utils
@@ -153,14 +154,57 @@ def main():
         model.to(utils.DEV)
     
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model, use_fast=False, use_auth_token=args.hf_token)
-    hflm = HFLM(pretrained=model, tokenizer=tokenizer, batch_size=args.lm_eval_batch_size)
+    hflm = HFLM(pretrained=model, tokenizer=tokenizer, batch_size=args.lm_eval_batch_size, add_bos_token=False)
 
-    task_names = lm_eval_utils.pattern_match(args.tasks, ALL_TASKS)
-    results = lm_eval.simple_evaluate(hflm, tasks=task_names, batch_size=args.lm_eval_batch_size)['results']
+    if 'gsm8k_cot_llama' in args.tasks:
+        num_fewshot = 8
+        fewshot_as_multiturn = True
+        apply_chat_template = True
+    else:
+        num_fewshot = 0
+        fewshot_as_multiturn = False
+        apply_chat_template = False
+    
+    confirm_run_unsafe_code = False
+    for task in args.tasks:
+        if 'humaneval' in task.lower():
+            import os
+            os.environ["HF_ALLOW_CODE_EVAL"] = "1"
+            os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    metric_vals = {task: round(result.get('acc_norm,none', result['acc,none']), 4) for task, result in results.items()}
-    metric_vals['acc_avg'] = round(sum(metric_vals.values()) / len(metric_vals.values()), 4)
-    print(metric_vals)
+            confirm_run_unsafe_code = True
+            break
+    
+    output_dir = os.path.join(f'/home/yc2367/llm/QuaRot/fake_quant/results/{args.tasks[0]}', args.model.split('/')[-1])
+    os.makedirs(output_dir, exist_ok=True)
+    if (args.w_bits == 16) and (args.a_bits == 16) and (args.k_bits == 16) and (args.v_bits == 16):
+        output_file_name = "Baseline-FP16"
+    else:
+        output_file_name = f"w{args.w_bits}-a{args.a_bits}-gs{args.w_groupsize}-k{args.k_bits}-k{args.v_bits}"
+    output_file_path = os.path.join(output_dir, f"{output_file_name}.json")
+    if os.path.isfile(output_file_path):
+        print(f'Found existing output file {output_file_name} for this experiment. Exit! \n\n')
+        exit()
+
+    results = lm_eval.simple_evaluate(
+        hflm, 
+        tasks=args.tasks, 
+        batch_size=args.lm_eval_batch_size,
+        num_fewshot=num_fewshot,
+        fewshot_as_multiturn=fewshot_as_multiturn,
+        apply_chat_template=apply_chat_template,
+        confirm_run_unsafe_code=confirm_run_unsafe_code
+    )
+
+    # metric_vals = {task: round(result.get('acc_norm,none', result['acc,none']), 4) for task, result in results.items()}
+    # metric_vals['acc_avg'] = round(sum(metric_vals.values()) / len(metric_vals.values()), 4)
+    # print(metric_vals)
+    print(lm_eval_utils.make_table(results))
+    print('\n')
+
+    # Save results to JSON file
+    with open(output_file_path, "w") as f:
+        json.dump(results['results'], f, indent=4)
 
     if args.wandb:
         wandb.log(metric_vals)

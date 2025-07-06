@@ -18,7 +18,9 @@ supported_models = [
             'meta-llama/Llama-2-13b-hf',
             'meta-llama/Llama-2-70b-hf',
             'meta-llama/Llama-3.1-8B',
+            'meta-llama/Llama-3.1-8B-Instruct',
             'meta-llama/Llama-3.2-3B',
+            'meta-llama/Llama-3.2-3B-Instruct',
             "mistralai/Mistral-7B-v0.3",
             'facebook/opt-125m'
             ]
@@ -78,7 +80,7 @@ def parser_gen():
     parser.add_argument('--model', type=str, default='meta-llama/Llama-2-7b-hf',
                         help='Model to load;', choices=supported_models)
     parser.add_argument('--seed', type=int, default=0, help='Random Seed for HuggingFace and PyTorch')
-    parser.add_argument('--eval_dataset', type=str, default='wikitext2',
+    parser.add_argument('--eval_dataset', type=str, default='',
                         help='Dataset for Evaluation (default: wikitext2)')
     parser.add_argument('--hf_token', type=str, default=None)
     parser.add_argument('--bsz', type=int, default=32,
@@ -170,7 +172,6 @@ def parser_gen():
     parser.add_argument('--wandb_project', type=str, default=None)
 
 
-
     #Experiments Arguments
     parser.add_argument('--save_name', type=str, default=None, help='The path to save experiment data, '
                                                                     'including quantized models, dumped layer inputs, etc. The data will be saved in experiments/[model]/save_name. Default: [datetime].')
@@ -193,14 +194,6 @@ def parser_gen():
     )
 
     args = parser.parse_args()
-    if args.lm_eval:
-        from lm_eval import tasks
-        from lm_eval import utils as lm_eval_utils
-        from lm_eval.tasks import initialize_tasks
-        initialize_tasks()
-        for task in args.tasks:
-            if task not in lm_eval_utils.MultiChoice(tasks.ALL_TASKS):
-                raise ValueError(f"Invalid task: {task}")
 
     # quant_type = f'w{args.w_bits}a{args.a_bits}_{args.rotate_mode}'
     if args.save_name is None:
@@ -216,7 +209,6 @@ def parser_gen():
 
     if args.model == 'facebook/opt-125m' or args.model == 'facebook/opt-1.3b':
         logging.warning('Warning: OPT-125M/1.3B is only for debugging purposes!!')
-
 
     if args.wandb:
         assert args.wandb_id is not None and args.wandb_project is not None, 'WandB ID/project is not provided!'
